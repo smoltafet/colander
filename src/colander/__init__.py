@@ -261,18 +261,25 @@ class All:
                 excs.append(e)
 
         if excs:
-            children = []
-            messages = []
-            for exception in excs:
-                if exception.msg is not None:
-                    if is_nonstr_iter(exception.msg):
-                        messages.extend(exception.msg)
-                    else:
-                        messages.append(exception.msg)
-                children.extend(exception.children)
-            exc = Invalid(node, messages)
-            exc.children.extend(children)
-            raise exc
+            raise self._combined_error(node, excs)
+
+    @staticmethod
+    def _combined_error(node, excs):
+        """Combine several :class:`colander.Invalid` exceptions raised by
+        subvalidators into a single one, aggregating their messages and
+        children."""
+        children = []
+        messages = []
+        for exception in excs:
+            if exception.msg is not None:
+                if is_nonstr_iter(exception.msg):
+                    messages.extend(exception.msg)
+                else:
+                    messages.append(exception.msg)
+            children.extend(exception.children)
+        exc = Invalid(node, messages)
+        exc.children.extend(children)
+        return exc
 
 
 class Any(All):
@@ -283,13 +290,22 @@ class Any(All):
     """
 
     def __call__(self, node, value):
-        try:
-            return super().__call__(node, value)
-        except Invalid as e:
-            if len(e.msg) < len(self.validators):
-                # At least one validator did not fail:
-                return
-            raise
+        excs = []
+        for validator in self.validators:
+            try:
+                validator(node, value)
+            except Invalid as e:
+                excs.append(e)
+
+        if len(excs) < len(self.validators):
+            # At least one validator did not fail:
+            return
+        if excs:
+            # Every validator failed.  Decide from the number of failed
+            # validators, not from the number of error messages: a
+            # subvalidator may raise Invalid without a message (or with
+            # several), so message counts do not track failures.
+            raise self._combined_error(node, excs)
 
 
 class Function:

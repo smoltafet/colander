@@ -297,6 +297,42 @@ class TestAny(unittest.TestCase):
         e = invalid_exc(validator, None, None)
         self.assertEqual(e.msg, ['msg1', 'msg2'])
 
+    def test_failure_with_messageless_validator(self):
+        # A subvalidator that raises Invalid without a message still
+        # counts as a failure: if every subvalidator fails, Any fails,
+        # even though the message count is lower than the number of
+        # validators.
+        validator1 = DummyValidatorWithMsgNone()
+        validator2 = DummyValidator('msg2')
+        validator = self._makeOne([validator1, validator2])
+        e = invalid_exc(validator, None, None)
+        self.assertEqual(e.msg, ['msg2'])
+
+    def test_failure_with_single_messageless_validator(self):
+        validator = self._makeOne([DummyValidatorWithMsgNone()])
+        e = invalid_exc(validator, None, None)
+        self.assertEqual(e.msg, [])
+
+    def test_failure_all_messageless_validators(self):
+        validator1 = DummyValidatorWithMsgNone()
+        validator2 = DummyValidatorWithMsgNone()
+        validator = self._makeOne([validator1, validator2])
+        e = invalid_exc(validator, None, None)
+        self.assertEqual(e.msg, [])
+
+    def test_success_with_multi_message_failure(self):
+        # A failing subvalidator that contributes several messages does
+        # not make Any fail when another subvalidator passes: message
+        # counts do not track how many validators failed.
+        validator1 = DummyValidator(['msg1a', 'msg1b'])
+        validator2 = DummyValidator()
+        validator = self._makeOne([validator1, validator2])
+        self.assertEqual(validator(None, None), None)
+
+    def test_no_validators(self):
+        validator = self._makeOne([])
+        self.assertEqual(validator(None, None), None)
+
     def test_Invalid_children(self):
         from colander import Invalid
 
@@ -308,6 +344,21 @@ class TestAny(unittest.TestCase):
         validator2 = DummyValidator()
         validator = self._makeOne([validator1, validator2])
         self.assertEqual(validator(None, None), None)
+
+    def test_Invalid_children_all_fail(self):
+        from colander import Invalid
+
+        node1 = DummySchemaNode(None, 'node1')
+        node = DummySchemaNode(None, 'node')
+        node.children = [node1]
+        exc1 = Invalid(node1, 'exc1')
+        exc2 = Invalid(node1, 'exc2')
+        validator1 = DummyValidator('validator1', [exc1])
+        validator2 = DummyValidator('validator2', [exc2])
+        validator = self._makeOne([validator1, validator2])
+        exc = invalid_exc(validator, node, None)
+        self.assertEqual(exc.msg, ['validator1', 'validator2'])
+        self.assertEqual(exc.children, [exc1, exc2])
 
 
 class TestFunction(unittest.TestCase):
